@@ -480,3 +480,52 @@ describe("pet chat module wiring", () => {
     assert.ok(bounds.width > 0 && bounds.height > 0);
   });
 });
+
+// The window gets a full snapshot per streamed chunk. Rebuilding the transcript
+// on each one made the log flicker and replayed the entry animation dozens of
+// times a second (the "thinking text keeps flashing" bug). This guards the
+// structural invariants that keep updates incremental — it inspects the source
+// because the renderer runs only inside Electron.
+describe("pet chat renderer stays incremental", () => {
+  const source = fs.readFileSync(path.join(__dirname, "..", "src", "pet-chat-renderer.js"), "utf8");
+
+  it("never clears the whole transcript on update", () => {
+    // `logEl.textContent = ""` / `logEl.innerHTML = ...` would detach every row.
+    assert.ok(
+      !/logEl\.textContent\s*=\s*""/.test(source),
+      "renderer must not wipe logEl; that rebuilds every bubble per chunk"
+    );
+    assert.ok(
+      !/logEl\.innerHTML\s*=/.test(source),
+      "renderer must not assign logEl.innerHTML"
+    );
+  });
+
+  it("reuses mounted rows through a row cache", () => {
+    assert.match(source, /let rows = \[\];/);
+    assert.match(source, /let streamingRow = null;/);
+  });
+
+  it("repaints the streaming bubble in place instead of recreating it", () => {
+    // The in-flight row is created only when missing, never appended per update.
+    const streamingBlock = source.slice(
+      source.indexOf("// ── In-flight bubble"),
+      source.indexOf("renderedShape = shape;\n  finishRender(snapshot, messages, shouldStick);")
+    );
+    assert.ok(streamingBlock.length > 0, "expected an in-flight section");
+    assert.match(
+      streamingBlock,
+      /if \(!streamingRow \|\| streamingRow\.dataset\.kind !== "pet"\)/,
+      "in-flight row must be reused when it already exists"
+    );
+  });
+
+  it("does not reassign text when the string is unchanged", () => {
+    assert.match(source, /if \(body\.textContent !== text\) body\.textContent = text;/);
+    assert.match(source, /if \(think\.textContent !== reasoning\) think\.textContent = reasoning;/);
+  });
+
+  it("drops mounted rows when history is cleared", () => {
+    assert.match(source, /rows = \[\];/);
+  });
+});
