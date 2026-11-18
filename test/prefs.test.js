@@ -1699,9 +1699,9 @@ describe("prefs.migrate v20 → v21 (Codex Auto approval routing)", () => {
   });
 
   it("tolerates a missing or malformed agents map", () => {
-    assert.strictEqual(prefs.migrate({ version: 20 }).version, 21);
-    assert.strictEqual(prefs.migrate({ version: 20, agents: [] }).version, 21);
-    assert.strictEqual(prefs.migrate({ version: 20, agents: { codex: null } }).version, 21);
+    assert.strictEqual(prefs.migrate({ version: 20 }).version, prefs.CURRENT_VERSION);
+    assert.strictEqual(prefs.migrate({ version: 20, agents: [] }).version, prefs.CURRENT_VERSION);
+    assert.strictEqual(prefs.migrate({ version: 20, agents: { codex: null } }).version, prefs.CURRENT_VERSION);
   });
 
   it("keeps an Intercept choice made after the migration", () => {
@@ -2046,22 +2046,23 @@ describe("prefs.load", () => {
     }
   });
 
-  it("accepts the current v21 schema and locks an explicit v22 file", () => {
-    const currentPath = makeTempPath("v21.json");
-    fs.writeFileSync(currentPath, JSON.stringify({ version: 21, lang: "zh" }), "utf8");
+  it("accepts the current schema and locks an explicit future-version file", () => {
+    const currentVersion = prefs.CURRENT_VERSION;
+    const currentPath = makeTempPath(`v${currentVersion}.json`);
+    fs.writeFileSync(currentPath, JSON.stringify({ version: currentVersion, lang: "zh" }), "utf8");
     const current = prefs.load(currentPath);
     assert.strictEqual(current.locked, false);
-    assert.strictEqual(current.snapshot.version, 21);
+    assert.strictEqual(current.snapshot.version, currentVersion);
     assert.strictEqual(current.snapshot.lang, "zh");
 
-    const futurePath = makeTempPath("v22.json");
-    fs.writeFileSync(futurePath, JSON.stringify({ version: 22, lang: "ja" }), "utf8");
+    const futurePath = makeTempPath(`v${currentVersion + 1}.json`);
+    fs.writeFileSync(futurePath, JSON.stringify({ version: currentVersion + 1, lang: "ja" }), "utf8");
     const originalWarn = console.warn;
     console.warn = () => {};
     try {
       const future = prefs.load(futurePath);
       assert.strictEqual(future.locked, true);
-      assert.strictEqual(future.snapshot.version, 22);
+      assert.strictEqual(future.snapshot.version, currentVersion + 1);
       assert.strictEqual(future.snapshot.lang, "ja");
     } finally {
       console.warn = originalWarn;

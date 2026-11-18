@@ -323,6 +323,14 @@ module.exports = function initMenu(ctx) {
           if (typeof ctx.openDashboard === "function") ctx.openDashboard();
         },
       },
+      ...(ctx.petChatEnabled
+        ? [{
+          label: t("openPetChat"),
+          click: () => {
+            if (typeof ctx.openPetChat === "function") ctx.openPetChat();
+          },
+        }]
+        : []),
       buildPermissionAutomationMenuItem(),
     ];
 
@@ -613,6 +621,15 @@ module.exports = function initMenu(ctx) {
           if (typeof ctx.openDashboard === "function") ctx.openDashboard();
         },
       },
+      // Only offered when the user actually turned the feature on.
+      ...(ctx.petChatEnabled
+        ? [{
+          label: t("openPetChat"),
+          click: () => {
+            if (typeof ctx.openPetChat === "function") ctx.openPetChat();
+          },
+        }]
+        : []),
       {
         label: t("openRecap"),
         click: () => ctx.openSettingsWindow({ tab: "recap" }),

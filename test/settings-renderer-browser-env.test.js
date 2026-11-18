@@ -22954,7 +22954,7 @@ describe("Settings tabs and segmented choice contracts", () => {
     document.body.append(sidebar, content);
     const core = loadSettingsCoreForTest({}, { document });
     let exits = 0;
-    for (const id of ["general", "pet", "notifications", "sessions", "permissions", "agents", "remote-ssh", "discord-presence", "theme", "animOverrides", "shortcuts", "recap", "about"]) {
+    for (const id of ["general", "pet", "pet-chat", "notifications", "sessions", "permissions", "agents", "remote-ssh", "discord-presence", "theme", "animOverrides", "shortcuts", "recap", "about"]) {
       core.tabs[id] = { render(panel) { const heading = document.createElement("h1"); heading.textContent = id; panel.appendChild(heading); },
         onExit() { exits++; } };
     }
@@ -22966,11 +22966,11 @@ describe("Settings tabs and segmented choice contracts", () => {
     core.ops.requestRender({ sidebar: true, content: true });
     const group = sidebar.children[1];
     assert.equal(group.getAttribute("role"), "tablist");
-    const [general, pet, notifications, sessions, permissions, agents, remoteSsh, discordPresence, theme, animOverrides, shortcuts, recap, about] = group.querySelectorAll("button");
+    const [general, pet, petChat, notifications, sessions, permissions, agents, remoteSsh, discordPresence, theme, animOverrides, shortcuts, recap, about] = group.querySelectorAll("button");
     for (const button of [agents, theme, recap]) {
       assert.ok(button.classList.contains("sidebar-item-group-start"), `${button.dataset.value} starts a group`);
     }
-    for (const button of [general, pet, notifications, sessions, permissions, remoteSsh, discordPresence, animOverrides, shortcuts, about]) {
+    for (const button of [general, pet, petChat, notifications, sessions, permissions, remoteSsh, discordPresence, animOverrides, shortcuts, about]) {
       assert.ok(!button.classList.contains("sidebar-item-group-start"), `${button.dataset.value} does not start a group`);
     }
     general.focus();

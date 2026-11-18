@@ -8,6 +8,7 @@ const core = globalThis.ClawdSettingsCore;
 const SIDEBAR_TABS = [
   { id: "general", labelKey: "sidebarGeneral", available: true },
   { id: "pet", labelKey: "sidebarPet", available: true },
+  { id: "pet-chat", labelKey: "sidebarPetChat", available: true },
   { id: "notifications", labelKey: "sidebarNotifications", available: true },
   { id: "sessions", labelKey: "sidebarSessions", available: true },
   { id: "permissions", labelKey: "sidebarPermissions", available: true },
@@ -25,6 +26,27 @@ function getTabIcon(tabId) {
   const icons = globalThis.ClawdSettingsIcons;
   if (icons && typeof icons.getIcon === "function") return icons.getIcon(tabId);
   return "";
+}
+
+// Icons come from the bundled settings-icons.js as inline SVG markup (never
+// user input), but the markup still has to be turned into nodes. DOMParser +
+// importNode does that without assigning innerHTML, so model/user text can
+// never be interpreted as markup here. Environments without DOMParser (the
+// Settings test fakes) simply render without the icon.
+function createIconNode(tabId) {
+  const span = document.createElement("span");
+  span.className = "sidebar-item-icon";
+  span.setAttribute("aria-hidden", "true");
+  const markup = getTabIcon(tabId);
+  if (!markup || typeof DOMParser !== "function") return span;
+  try {
+    const parsed = new DOMParser().parseFromString(markup, "image/svg+xml");
+    const svg = parsed && parsed.documentElement;
+    if (svg && svg.nodeName && svg.nodeName.toLowerCase() === "svg" && !parsed.querySelector("parsererror")) {
+      span.appendChild(document.importNode(svg, true));
+    }
+  } catch {}
+  return span;
 }
 
 let sidebarTabs = null;
@@ -54,11 +76,18 @@ function renderSidebar() {
     onChange: (value) => core.ops.selectTab(value),
     renderLabel(item, tab) {
       item.classList.toggle("sidebar-item-group-start", tab.groupStart === true);
-      // Icons come from the bundled settings-icons.js, never user input.
-      item.innerHTML =
-        `<span class="sidebar-item-icon" aria-hidden="true">${getTabIcon(tab.id)}</span>` +
-        `<span class="sidebar-item-label">${core.helpers.escapeHtml(core.helpers.t(tab.labelKey))}</span>` +
-        (tab.available ? "" : `<span class="sidebar-item-soon">${core.helpers.escapeHtml(core.helpers.t("sidebarSoon"))}</span>`);
+      item.textContent = "";
+      item.appendChild(createIconNode(tab.id));
+      const label = document.createElement("span");
+      label.className = "sidebar-item-label";
+      label.textContent = core.helpers.t(tab.labelKey);
+      item.appendChild(label);
+      if (!tab.available) {
+        const soon = document.createElement("span");
+        soon.className = "sidebar-item-soon";
+        soon.textContent = core.helpers.t("sidebarSoon");
+        item.appendChild(soon);
+      }
     },
   });
   sidebar.appendChild(sidebarTabs.element);
@@ -67,10 +96,18 @@ function renderSidebar() {
 function renderPlaceholder(parent) {
   const div = document.createElement("div");
   div.className = "placeholder";
-  div.innerHTML =
-    `<div class="placeholder-icon">${getTabIcon("placeholder")}</div>` +
-    `<div class="placeholder-title">${core.helpers.escapeHtml(core.helpers.t("placeholderTitle"))}</div>` +
-    `<div class="placeholder-desc">${core.helpers.escapeHtml(core.helpers.t("placeholderDesc"))}</div>`;
+  const icon = document.createElement("div");
+  icon.className = "placeholder-icon";
+  icon.appendChild(createIconNode("placeholder"));
+  div.appendChild(icon);
+  const title = document.createElement("div");
+  title.className = "placeholder-title";
+  title.textContent = core.helpers.t("placeholderTitle");
+  div.appendChild(title);
+  const desc = document.createElement("div");
+  desc.className = "placeholder-desc";
+  desc.textContent = core.helpers.t("placeholderDesc");
+  div.appendChild(desc);
   parent.appendChild(div);
 }
 
@@ -113,6 +150,7 @@ globalThis.ClawdSettingsTabAnimOverrides.init(core);
 globalThis.ClawdSettingsTabShortcuts.init(core);
 if (globalThis.ClawdSettingsTabTelegramApproval) globalThis.ClawdSettingsTabTelegramApproval.init(core);
 if (globalThis.ClawdSettingsTabDiscordPresence) globalThis.ClawdSettingsTabDiscordPresence.init(core);
+if (globalThis.ClawdSettingsTabPetChat) globalThis.ClawdSettingsTabPetChat.init(core);
 if (globalThis.ClawdSettingsTabRecap) globalThis.ClawdSettingsTabRecap.init(core);
 globalThis.ClawdSettingsTabAbout.init(core);
 if (globalThis.ClawdSettingsTabRemoteSsh) globalThis.ClawdSettingsTabRemoteSsh.init(core);

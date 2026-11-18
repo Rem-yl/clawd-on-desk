@@ -28,7 +28,7 @@ async function main() {
     }
     await run(`
       window.exits = 0;
-      for (const id of ["general", "pet", "notifications", "sessions", "permissions", "agents", "remote-ssh", "discord-presence", "theme", "animOverrides", "shortcuts", "recap", "about"]) {
+      for (const id of ["general", "pet", "pet-chat", "notifications", "sessions", "permissions", "agents", "remote-ssh", "discord-presence", "theme", "animOverrides", "shortcuts", "recap", "about"]) {
         ClawdSettingsCore.tabs[id] = { render(panel) { panel.textContent = id; }, onExit() { exits++; } };
       }
       window.readChoice = () => ({ value: ClawdSettingsCore.state.activeTab, focus: document.activeElement.dataset.value, exits });
@@ -46,7 +46,8 @@ async function main() {
     assert.deepEqual(await run("readChoice()"), { value: "pet", focus: "pet", exits: 1 });
     await key("Down");
     await key("Space");
-    assert.deepEqual(await run("readChoice()"), { value: "notifications", focus: "notifications", exits: 2 });
+    // "pet-chat" sits directly after "pet" in the sidebar order.
+    assert.deepEqual(await run("readChoice()"), { value: "pet-chat", focus: "pet-chat", exits: 2 });
     await key("Tab");
     assert.equal(await run('document.activeElement.getAttribute("role")'), "tabpanel");
 
@@ -54,7 +55,7 @@ async function main() {
     await win.webContents.debugger.sendCommand("Accessibility.enable");
     const tree = await win.webContents.debugger.sendCommand("Accessibility.getFullAXTree");
     const tabs = tree.nodes.filter((node) => !node.ignored && node.role?.value === "tab");
-    assert.equal(tabs.length, 13);
+    assert.equal(tabs.length, 14);
     assert.equal(tabs.filter((node) => node.properties.some((prop) => prop.name === "selected" && prop.value.value)).length, 1);
     assert.equal(tree.nodes.filter((node) => !node.ignored && node.role?.value === "tabpanel").length, 1);
     win.webContents.debugger.detach();

@@ -583,6 +583,82 @@ function registerSettingsIpc(options = {}) {
       ? runtime.forget()
       : { status: "error", reason: "runtime-unavailable" };
   });
+  handle("settings:pet-chat-status", (event) => {
+    const rejected = rejectUntrustedSettingsEvent(event);
+    if (rejected) return rejected;
+    const runtime = options.petChatRuntime;
+    return runtime && typeof runtime.getStatus === "function"
+      ? { status: "ok", ...runtime.getStatus() }
+      : { status: "error", reason: "runtime-unavailable" };
+  });
+  handle("settings:pet-chat-set-key", (event, payload) => {
+    const rejected = rejectUntrustedSettingsEvent(event);
+    if (rejected) return rejected;
+    if (!payload || typeof payload.apiKey !== "string" || !payload.apiKey.trim()) {
+      return { status: "error", reason: "invalid-credential-input" };
+    }
+    const runtime = options.petChatRuntime;
+    if (!runtime || !runtime.credentialStore) {
+      return { status: "error", reason: "runtime-unavailable" };
+    }
+    try {
+      runtime.credentialStore.save(payload.apiKey.trim());
+      runtime.invalidateKeyCache();
+      runtime.refreshStatus();
+      return { status: "ok" };
+    } catch (error) {
+      return { status: "error", reason: (error && error.code) || "save-failed" };
+    }
+  });
+  handle("settings:pet-chat-forget-key", (event) => {
+    const rejected = rejectUntrustedSettingsEvent(event);
+    if (rejected) return rejected;
+    const runtime = options.petChatRuntime;
+    if (!runtime || !runtime.credentialStore) {
+      return { status: "error", reason: "runtime-unavailable" };
+    }
+    try {
+      const removed = runtime.credentialStore.forget();
+      runtime.invalidateKeyCache();
+      runtime.refreshStatus();
+      return { status: "ok", removed };
+    } catch (error) {
+      return { status: "error", reason: (error && error.code) || "forget-failed" };
+    }
+  });
+  handle("settings:pet-chat-get-memory", (event) => {
+    const rejected = rejectUntrustedSettingsEvent(event);
+    if (rejected) return rejected;
+    const runtime = options.petChatRuntime;
+    if (!runtime || !runtime.store) return { status: "error", reason: "runtime-unavailable" };
+    return { status: "ok", ...runtime.store.loadMemory() };
+  });
+  handle("settings:pet-chat-save-memory", (event, payload) => {
+    const rejected = rejectUntrustedSettingsEvent(event);
+    if (rejected) return rejected;
+    if (!payload || typeof payload.text !== "string") {
+      return { status: "error", reason: "invalid-memory-input" };
+    }
+    const runtime = options.petChatRuntime;
+    if (!runtime || !runtime.store) return { status: "error", reason: "runtime-unavailable" };
+    try {
+      return { status: "ok", ...runtime.store.saveMemory(payload.text) };
+    } catch {
+      return { status: "error", reason: "save-failed" };
+    }
+  });
+  handle("settings:pet-chat-clear-history", (event) => {
+    const rejected = rejectUntrustedSettingsEvent(event);
+    if (rejected) return rejected;
+    const runtime = options.petChatRuntime;
+    if (!runtime || !runtime.store) return { status: "error", reason: "runtime-unavailable" };
+    try {
+      runtime.store.clearHistory();
+      return { status: "ok" };
+    } catch {
+      return { status: "error", reason: "clear-failed" };
+    }
+  });
   handle("settings:deepseek-balance-status", (event) => {
     const rejected = rejectUntrustedSettingsEvent(event);
     if (rejected) return rejected;

@@ -243,6 +243,14 @@ contextBridge.exposeInMainWorld("settingsAPI", {
     ipcRenderer.invoke("settings:confirm-remove-theme", themeId),
   getMobileConnectionInfo: () => ipcRenderer.invoke("settings:mobile-connection-info"),
   getMobileDevices: () => ipcRenderer.invoke("settings:mobile-devices"),
+  // Pet chat: secrets and transcript/memory files are reached only through
+  // their own dedicated channels, never through update()/command().
+  getPetChatStatus: () => ipcRenderer.invoke("settings:pet-chat-status"),
+  setPetChatApiKey: (apiKey) => ipcRenderer.invoke("settings:pet-chat-set-key", { apiKey }),
+  forgetPetChatApiKey: () => ipcRenderer.invoke("settings:pet-chat-forget-key"),
+  getPetChatMemory: () => ipcRenderer.invoke("settings:pet-chat-get-memory"),
+  savePetChatMemory: (text) => ipcRenderer.invoke("settings:pet-chat-save-memory", { text }),
+  clearPetChatHistory: () => ipcRenderer.invoke("settings:pet-chat-clear-history"),
   revokeMobileDevice: (id) => ipcRenderer.invoke("settings:revoke-mobile-device", id),
   revokeMobileLegacy: () => ipcRenderer.invoke("settings:revoke-mobile-legacy"),
   refreshMobilePairCode: () => ipcRenderer.invoke("settings:refresh-mobile-pair-code"),

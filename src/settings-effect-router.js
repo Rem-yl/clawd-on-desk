@@ -35,6 +35,8 @@ const MENU_AFFECTING_KEYS = new Set([
   "size",
   "sessionAliases",
   "disableMiniMode",
+  // The tray/context menus only offer "Chat with Clawd" while the feature is on.
+  "petChat",
 ]);
 
 const BUBBLE_PLACEMENT_KEYS = new Set([

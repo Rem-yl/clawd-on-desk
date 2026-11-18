@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'">
+<link rel="stylesheet" href="pet-chat.css">
+<title>Pet Chat</title>
+</head>
+<body>
+<div class="chat" id="chat">
+  <header class="chat-head" id="chatHead">
+    <span class="chat-title" id="chatTitle">Chat</span>
+    <div class="chat-head-actions">
+      <button class="icon-btn" id="btnClear" type="button" title="Clear" aria-label="Clear conversation">⟲</button>
+      <button class="icon-btn" id="btnClose" type="button" title="Close" aria-label="Close chat">×</button>
+    </div>
+  </header>
+
+  <div class="chat-log" id="chatLog" role="log" aria-live="polite"></div>
+
+  <div class="chat-error" id="chatError" hidden></div>
+
+  <form class="chat-compose" id="chatCompose">
+    <textarea
+      id="chatInput"
+      class="chat-input"
+      rows="1"
+      maxlength="4000"
+      spellcheck="false"
+      placeholder="Say something…"
+      aria-label="Message"></textarea>
+    <button class="send-btn" id="btnSend" type="submit" title="Send" aria-label="Send">↑</button>
+    <button class="send-btn stop" id="btnStop" type="button" title="Stop" aria-label="Stop" hidden>■</button>
+  </form>
+</div>
+<script src="pet-chat-renderer.js"></script>
+</body>
+</html>

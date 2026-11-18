@@ -162,6 +162,8 @@ const { createFeishuApprovalMigrationNudge } = require("./feishu-approval-migrat
 const { createTrayBalloonOwner } = require("./tray-balloon-owner");
 const initUpdateBubble = require("./update-bubble");
 const { registerUpdateBubbleIpc } = initUpdateBubble;
+const { registerPetChatIpc } = require("./pet-chat-ipc");
+const { normalizePetChat: normalizePetChatConfig } = require("./pet-chat-config");
 const createSettingsAnimationOverridesMain = require("./settings-animation-overrides-main");
 const { registerSettingsAnimationOverridesIpc } = createSettingsAnimationOverridesMain;
 const createShortcutRuntime = require("./shortcut-runtime");
@@ -1257,7 +1259,13 @@ const petWindowRuntime = createPetWindowRuntime({
   syncImeEditingPetDodge: () => topmostRuntime.syncImeEditingPetDodge(),
   repositionFloatingBubbles: () => repositionFloatingBubbles(),
   showFloatingSurfacesForPet: () => floatingWindowRuntime.showFloatingSurfacesForPet(),
-  hideFloatingSurfacesForPet: () => floatingWindowRuntime.hideFloatingSurfacesForPet(),
+  // The chat panel is a real interactive window, so it does NOT auto-reappear
+  // with the pet: hiding the pet puts chat away, and getting it back is an
+  // explicit click. Only the hide direction is wired here.
+  hideFloatingSurfacesForPet: () => {
+    floatingWindowRuntime.hideFloatingSurfacesForPet();
+    try { _petChat.syncWithPetVisibility(true); } catch {}
+  },
   setFloatingSurfacesFullscreenSuppressed: (suppressed) => (
     floatingWindowRuntime.setFullscreenSuppressedForPet(suppressed, {
       includePermissionSurfaces: fullscreenAutoHideCached,
@@ -1589,7 +1597,7 @@ let macHideController = null; // macOS app-hidden ↔ pet visibility bridge (#41
 function prepManualPetVisibility() {
   if (macHideController) macHideController.noteManualChange();
   if (isMac && petWindowRuntime.isPetHidden() && typeof app.isHidden === "function" && app.isHidden()) {
-    try { app.show(); } catch (_) {}
+    try { app.show(); } catch {}
   }
 }
 function togglePetVisibility() {
@@ -2469,8 +2477,45 @@ function repositionFloatingBubbles() {
   return floatingWindowRuntime.repositionFloatingBubbles();
 }
 
+// ── Pet chat (click-to-talk) ──
+// Declared here, constructed in createWindow() once the pet window exists (the
+// chat panel parents to it). `_petChat` stays null until then; every reader
+// below is defensive so menu/keyboard paths can't throw during startup.
+let _petChat = {
+  open: () => ({ status: "error", reason: "not-ready" }),
+  close: () => ({ status: "ok" }),
+  toggle: () => ({ status: "error", reason: "not-ready" }),
+  isVisible: () => false,
+  getStatus: () => ({ enabled: false, ready: false, reason: "not-ready" }),
+  invalidateKeyCache: () => {},
+  refreshStatus: () => {},
+  onSettingsChanged: () => {},
+  onLangChanged: () => {},
+  syncWithPetVisibility: () => {},
+  reposition: () => {},
+  dispose: () => {},
+};
+
+// Single source of truth for "what does a plain click on the pet do". When chat
+// is on and configured to own the click, the click toggles the chat panel;
+// otherwise it keeps the pre-existing reveal-HUD behaviour untouched.
+function handlePetBodyClick() {
+  const cfg = normalizePetChatConfig(_settingsController.get("petChat"));
+  if (cfg.enabled && cfg.openOnClick) {
+    const result = _petChat.toggle();
+    if (result && result.status === "ok") return result;
+  }
+  if (_sessionHud && typeof _sessionHud.revealFromPet === "function") {
+    _sessionHud.revealFromPet();
+  }
+  return { status: "ok" };
+}
+
 function repositionAnchoredFloatingSurfaces() {
   const result = floatingWindowRuntime.repositionAnchoredSurfaces();
+  // The chat panel is not in the floating-window runtime (it is a focusable
+  // window with its own lifecycle), so it follows the pet through its own call.
+  try { _petChat.reposition(); } catch {}
   // #640: pet bounds changed — re-evaluate the editing-overlap dodge (a drag
   // can slide the pet over the bubble being typed into; the bubble itself is
   // frozen while editing, and roam is paused, so the pet is the mover here).
@@ -2766,15 +2811,15 @@ _settingsController.subscribeKey("kimiQuotaCollectionEnabled", (enabled) => {
     console.warn("Clawd: Kimi quota preference reconciliation failed:", error && error.message);
   });
 });
-_settingsController.subscribeKey("agents", (_agents, snapshot) => {
+_settingsController.subscribeKey("agents", () => {
   if (!_runtimeAgentGate.isAgentEnabled("kimi-cli")) {
     _kimiQuotaRuntime.invalidateRequests();
   }
 });
 const { setState, applyState, updateSession, resolveDisplayState, getSvgOverride,
         enableDoNotDisturb, disableDoNotDisturb: disableDoNotDisturbState,
-        startStaleCleanup, stopStaleCleanup,
-        startWakePoll, stopWakePoll, detectRunningAgentProcesses,
+        startStaleCleanup,
+        stopWakePoll,
         startStartupRecovery: _startStartupRecovery } = _state;
 const sessions = _state.sessions;
 
@@ -2951,11 +2996,9 @@ const { startMainTick, resetIdleTimer } = _tick;
 const _focus = require("./focus")({ _allowSetForeground, focusLog });
 const {
   initFocusHelper,
-  killFocusHelper,
   focusTerminalWindow,
   focusProcessAppWindow,
   captureGhosttyTerminalId,
-  clearMacFocusCooldownTimer,
 } = _focus;
 
 function getFocusableLocalHudSessionIds() {
@@ -4310,7 +4353,7 @@ function buildTelegramStatusCommandText(options = {}) {
   });
 }
 
-function handleTelegramNativeCommand({ command, args } = {}) {
+function handleTelegramNativeCommand({ command } = {}) {
   if (command !== "status") return null;
   return buildTelegramStatusCommandText({ all: true });
 }
@@ -4948,6 +4991,11 @@ const _menuCtx = {
   checkForUpdates: (...args) => checkForUpdates(...args),
   getUpdateMenuItem: () => getUpdateMenuItem(),
   openDashboard: () => showDashboard(),
+  // Chat entry only appears in menus when the feature is on (see menu.js).
+  get petChatEnabled() {
+    return normalizePetChatConfig(_settingsController.get("petChat")).enabled;
+  },
+  openPetChat: () => { void _petChat.open(); },
   launchClaudeSession: (mode, cwd, sessionId) => launchClaudeSession(mode, cwd, sessionId),
   newSessionWithFolder: async (t) => {
     const parent = win && !win.isDestroyed() ? win : null;
@@ -5048,7 +5096,7 @@ const _menuCtx = {
 const _menu = require("./menu")(_menuCtx);
 const { t, buildContextMenu, buildTrayMenu, rebuildAllMenus, createTray,
         destroyTray, showPetContextMenu, ensureContextMenuOwner,
-        requestAppQuit, applyDockVisibility } = _menu;
+        applyDockVisibility } = _menu;
 
 // ── Settings effect router ──
 const SETTINGS_MIRROR_SETTERS = {
@@ -5266,6 +5314,12 @@ _settingsController.subscribeKey("feishuApproval", () => {
 _settingsController.subscribeKey("slackNotify", () => {
   broadcastSlackNotifyStatus();
 });
+_settingsController.subscribeKey("petChat", () => {
+  _petChat.onSettingsChanged();
+});
+_settingsController.subscribeKey("lang", () => {
+  _petChat.onLangChanged();
+});
 animationOverridesMain = createSettingsAnimationOverridesMain({
   app,
   BrowserWindow,
@@ -5319,7 +5373,6 @@ const {
   getUpdateCheckSnapshot,
   clearUpdateError,
   getUpdateMenuItem,
-  getUpdateMenuLabel,
   reconcilePendingOnStartup,
   onSilentModeExit: updaterOnSilentModeExit,
   startUpdateScheduler,
@@ -5512,6 +5565,15 @@ const settingsIpcRuntime = registerSettingsIpc({
   getRecentHookEvents: (options) => _server.getRecentHookEvents(options),
   kimiQuotaRuntime: _kimiQuotaRuntime,
   deepseekBalanceRuntime: _deepseekBalanceRuntime,
+  // Settings reads/writes the chat key + memory through these dedicated
+  // channels; it never touches the generic settings:update path for secrets.
+  petChatRuntime: {
+    getStatus: () => _petChat.getStatus(),
+    get credentialStore() { return _petChat.credentialStore; },
+    get store() { return _petChat.store; },
+    invalidateKeyCache: () => _petChat.invalidateKeyCache(),
+    refreshStatus: () => _petChat.refreshStatus(),
+  },
   checkForUpdates,
   getUpdateCheckSnapshot,
   clearUpdateError,
@@ -5771,11 +5833,7 @@ function createWindow() {
     focusLog: (message) => focusLog(message),
     showDashboard: () => showDashboard(),
     focusSession: (sessionId, options) => focusDashboardSession(sessionId, options),
-    revealSessionHud: () => {
-      if (_sessionHud && typeof _sessionHud.revealFromPet === "function") {
-        _sessionHud.revealFromPet();
-      }
-    },
+    revealSessionHud: () => handlePetBodyClick(),
     statPath: (p) => fs.promises.stat(p),
     openTerminalAt: (dir) => openTerminalAt(dir),
     dropLog: (message) => console.log(`Clawd: ${message}`),
@@ -5789,6 +5847,41 @@ function createWindow() {
   registerUpdateBubbleIpc({
     ipcMain,
     updateBubble: _updateBubble,
+  });
+
+  // Pet chat owns its own window parented to the pet. Constructed here (not at
+  // module scope) because it needs the live pet window for parenting and the
+  // floating-surface geometry helpers that are defined above.
+  _petChat = registerPetChatIpc({
+    ipcMain,
+    safeStorage,
+    settingsController: _settingsController,
+    userDataDir: app.getPath("userData"),
+    getLang: () => lang,
+    getPetWindow: () => (win && !win.isDestroyed() ? win : null),
+    getPetWindowBounds: () => getPetWindowBounds(),
+    getHitRectScreen,
+    getNearestWorkArea,
+    getBubbleWorkArea: (followPet, petBounds) => getBubbleWorkArea(followPet, petBounds),
+    getTextScale: (workArea) => getTextScaleForBubbleWorkArea(workArea),
+    getPermissionBubbleBounds: () => _perm.getVisibleBubbleBounds(),
+    getSessionHudBounds: () => getVisibleSessionHudBounds(),
+    repositionQuotaRing: () => repositionQuotaRing(),
+    guardAlwaysOnTop,
+    reapplyMacVisibility,
+    onMood: (mood) => {
+      // Chat emotional beats are hints, not session state: they go straight to
+      // the one-shot layer so they never disturb real agent sessions.
+      if (!normalizePetChatConfig(_settingsController.get("petChat")).petReactions) return;
+      if (doNotDisturb) return;
+      _state.setState(mood);
+    },
+    onVisibilityChange: () => {
+      // The chat panel can cover the pet's input rect, so let the editing-dodge
+      // scan and the floating-stack pass re-run whenever it opens/closes.
+      try { topmostRuntime.syncImeEditingPetDodge(); } catch {}
+      try { repositionFloatingBubbles(); } catch {}
+    },
   });
 
   initFocusHelper();
@@ -5962,7 +6055,6 @@ function getNearestWorkArea(cx, cy) {
 }
 
 function clampToScreenVisual(x, y, w, h, options = {}) { return petWindowRuntime.clampToScreenVisual(x, y, w, h, options); }
-function clampToScreen(x, y, w, h) { return petWindowRuntime.clampToScreen(x, y, w, h); }
 
 function computeFinalDragBounds(bounds, size, clampPosition = clampToScreenVisual) {
   return petWindowRuntime.computeFinalDragBounds(bounds, size, clampPosition);
@@ -6035,8 +6127,8 @@ const handleTestResult = createTestReactionHandler({
   hasPetWindow: () => !!(win && !win.isDestroyed()),
   sendToRenderer,
 });
-const { enterMiniMode, exitMiniMode, enterMiniViaMenu, miniPeekIn, miniPeekOut,
-        checkMiniModeSnap, cancelMiniTransition, animateWindowX, animateWindowParabola } = _mini;
+const { exitMiniMode, enterMiniViaMenu, miniPeekIn, miniPeekOut,
+        checkMiniModeSnap } = _mini;
 
 // ── Free Roam — initialized here after state and mini modules ──
 const _roamCtx = {
@@ -6611,6 +6703,7 @@ if (!gotTheLock) {
     _server.cleanup();
     if (_lanWss) _lanWss.cleanup();
     _updateBubble.cleanup();
+    try { _petChat.dispose(); } catch {}
     if (displayedVisualProjection) displayedVisualProjection.dispose();
     try { recapRuntime.dispose(); } catch {}
     _state.cleanup();

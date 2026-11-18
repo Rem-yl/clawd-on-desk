@@ -189,6 +189,7 @@ const {
 const {
   validateSlackNotify,
 } = require("./slack-notify-settings");
+const { validatePetChat } = require("./pet-chat-config");
 const { classifyFeishuApprovalRecipient } = require("./feishu-approval-recipient");
 const { EVENTS: TELEGRAM_MIGRATION_EVENTS } = require("./telegram-migration-state");
 
@@ -876,6 +877,11 @@ const updateRegistry = {
   slackNotify(value) {
     return validateSlackNotify(value);
   },
+  // Non-secret chat config only. The API key is written exclusively through
+  // the trusted settings:pet-chat-set-key IPC handler, never a prefs write.
+  petChat(value) {
+    return validatePetChat(value);
+  },
 
   // v0.9.0 spike: persisted migration state across restarts. Shape:
   //   { transport?: "legacy"|"native"|"off", nativeVerifiedAt?: number|null,
@@ -927,16 +933,7 @@ const updateRegistry = {
 };
 
 // ── commandRegistry ──
-// Non-field actions. Phase 0 has only stubs — they'll be filled in by later phases.
-
-function notImplemented(name) {
-  return function () {
-    return {
-      status: "error",
-      message: `${name}: not implemented yet (Phase 0 stub)`,
-    };
-  };
-}
+// Non-field actions that need real side effects.
 
 function setAllBubblesHidden(payload, deps) {
   const hidden = typeof payload === "boolean" ? payload : payload && payload.hidden;

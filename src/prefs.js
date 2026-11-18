@@ -51,6 +51,10 @@ const {
   normalizeSlackNotify,
 } = require("./slack-notify-settings");
 const {
+  cloneDefaultPetChat,
+  normalizePetChat,
+} = require("./pet-chat-config");
+const {
   NOTIFICATION_DEFAULT_SECONDS,
   UPDATE_DEFAULT_SECONDS,
   PERMISSION_DEFAULT_SECONDS,
@@ -71,7 +75,7 @@ const {
   PET_MOUTH_ACCESSORY_IDS,
 } = require("./pet-customization-catalog");
 
-const CURRENT_VERSION = 21;
+const CURRENT_VERSION = 22;
 const DEFAULT_INTEGRATION_INSTALLED_IDS = Object.freeze(["claude-code", "codex"]);
 const DEFAULT_INTEGRATION_INSTALLED_SET = new Set(DEFAULT_INTEGRATION_INSTALLED_IDS);
 
@@ -636,6 +640,13 @@ const SCHEMA = {
     defaultFactory: () => cloneDefaultSlackNotify(),
     normalize: normalizeSlackNotify,
   },
+  // Click-to-talk chat. Non-secret config only — the API key lives in the
+  // OS-encrypted pet-chat credential record, never in prefs.
+  petChat: {
+    type: "object",
+    defaultFactory: () => cloneDefaultPetChat(),
+    normalize: normalizePetChat,
+  },
   // v0.9.0 migration state. transport defaults to null (undecided) so v0.8.x
   // users upgrading without this key fall onto the "detect legacy artefacts"
   // path inside the migration reducer.
@@ -1076,6 +1087,12 @@ function migrate(raw) {
       out.agents = { ...agents, codex: { ...codex, permissionMode: "auto" } };
     }
     out.version = 21;
+  }
+  // v21 -> v22: pet chat. Purely additive, and default-off (enabled:false,
+  // empty baseUrl/model) so no existing install gains a network feature it
+  // didn't ask for. Nothing to rewrite.
+  if (out.version < 22) {
+    out.version = 22;
   }
   if ((typeof out.version === "number" ? out.version : 0) < CURRENT_VERSION) {
     out.version = CURRENT_VERSION;

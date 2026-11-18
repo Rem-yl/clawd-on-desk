@@ -771,6 +771,11 @@ module.exports = function initUpdateBubble(ctx) {
 
 module.exports.registerUpdateBubbleIpc = registerUpdateBubbleIpc;
 
+// Geometry helper, promoted out of __test: other floating surfaces (pet chat)
+// position themselves with exactly the same follow/dodge rules, and importing
+// it from a test-only namespace would be a production dependency on a test seam.
+module.exports.computeUpdateBubbleBounds = computeUpdateBubbleBounds;
+
 module.exports.__test = {
   computeAutoCloseRemainingMs,
   computeUpdateBubbleBounds,
