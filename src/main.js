@@ -2820,6 +2820,7 @@ const { setState, applyState, updateSession, resolveDisplayState, getSvgOverride
         enableDoNotDisturb, disableDoNotDisturb: disableDoNotDisturbState,
         startStaleCleanup,
         stopWakePoll,
+        detectRunningAgentProcesses,
         startStartupRecovery: _startStartupRecovery } = _state;
 const sessions = _state.sessions;
 
@@ -4507,7 +4508,6 @@ async function initTelegramMigrationController() {
       log: telegramApprovalLog,
     }),
     getDispatch: () => _telegramMigrationController && _telegramMigrationController.dispatch,
-    getLang: () => lang,
     getChatId: () => {
       const cfg = getTelegramApprovalPrefs();
       const key = cfg && cfg.targetSessionKey;
