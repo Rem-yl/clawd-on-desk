@@ -231,24 +231,33 @@ function buildEmptyState() {
 
 // Header presence line. Keeps the small status dot honest: it only claims
 // "online" when main actually reports a usable configuration.
+// Last known configuration status. Snapshots that carry only a transcript
+// (every streaming update) must not erase it — doing so left the header stuck
+// on "connecting…" forever after the first exchange.
+let knownStatus = null;
+
 function renderStatus(status, streaming) {
   if (!subEl) return;
-  let text = t("statusChecking");
-  let tone = "pending";
+  if (status && typeof status === "object") knownStatus = status;
+  const effective = knownStatus;
+
+  let text;
+  let tone;
   if (streaming) {
     text = t("statusThinking");
     tone = "pending";
-  } else if (status && status.enabled && status.ready) {
+  } else if (!effective) {
+    // Nothing has been reported yet; this is the only honest "unknown" case.
+    text = t("statusChecking");
+    tone = "pending";
+  } else if (effective.enabled && effective.ready) {
     text = t("statusReady");
     tone = "ready";
-  } else if (status && !status.enabled) {
-    text = t("statusOffline");
-    tone = "error";
-  } else if (status) {
+  } else {
     text = t("statusOffline");
     tone = "error";
   }
-  subEl.textContent = text;
+  if (subEl.textContent !== text) subEl.textContent = text;
   subEl.dataset.tone = tone;
 }
 

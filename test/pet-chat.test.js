@@ -529,3 +529,31 @@ describe("pet chat renderer stays incremental", () => {
     assert.match(source, /rows = \[\];/);
   });
 });
+
+// Regression: snapshots pushed by the session runtime carry only the
+// transcript. If the renderer treated a missing `status` as "connecting…", the
+// header stayed stuck on that text forever after the first exchange.
+describe("pet chat status survives transcript-only snapshots", () => {
+  const RENDERER = path.join(__dirname, "..", "src", "pet-chat-renderer.js");
+
+  it("keeps the last known status when a snapshot omits it", () => {
+    // The behaviour lives inside the page module, so assert on the source
+    // contract that makes it true: a remembered status is used as the fallback.
+    const source = fs.readFileSync(RENDERER, "utf8");
+    assert.match(source, /let knownStatus = null;/);
+    assert.match(source, /if \(status && typeof status === "object"\) knownStatus = status;/);
+    assert.match(source, /const effective = knownStatus;/);
+    // "connecting…" must be reserved for the genuinely-never-reported case.
+    assert.match(
+      source,
+      /else if \(!effective\) \{\s*\/\/[^\n]*\n\s*text = t\("statusChecking"\);/,
+      "statusChecking should only apply when no status was ever seen"
+    );
+  });
+
+  it("pushState attaches a status when the payload has none", () => {
+    const source = fs.readFileSync(path.join(__dirname, "..", "src", "pet-chat-ipc.js"), "utf8");
+    assert.match(source, /payload\.status !== undefined/);
+    assert.match(source, /status: currentStatus\(\)/);
+  });
+});

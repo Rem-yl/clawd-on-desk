@@ -69,9 +69,18 @@ function registerPetChatIpc(options = {}) {
     }
   }
 
+  // Single exit point for every snapshot the window sees. `status` is attached
+  // here rather than at each call site: the session runtime broadcasts on its
+  // own (thinking / streaming / done) with a transcript-only payload, and a
+  // missing `status` made the header fall back to "connecting…" permanently
+  // after the first exchange. Callers that already computed a status keep
+  // theirs; everyone else gets the current one.
   function pushState(payload) {
     if (!windowRuntime) return;
-    windowRuntime.refreshTranscript(payload);
+    const withStatus = payload && payload.status !== undefined
+      ? payload
+      : { ...payload, status: currentStatus() };
+    windowRuntime.refreshTranscript(withStatus);
   }
 
   function currentStatus() {
