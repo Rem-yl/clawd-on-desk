@@ -5855,6 +5855,7 @@ function createWindow() {
   _petChat = registerPetChatIpc({
     ipcMain,
     safeStorage,
+    clipboard,
     settingsController: _settingsController,
     userDataDir: app.getPath("userData"),
     getLang: () => lang,

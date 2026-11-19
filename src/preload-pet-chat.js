@@ -12,6 +12,7 @@
 //   close()                 hide the window
 //   setCollapsed(bool)      collapse/expand the transcript
 //   reportHeight(px)        measured outer height for positioning
+//   copyText(text)          write to the system clipboard (main-side)
 //
 // The renderer never holds conversation state: it re-renders from the last
 // snapshot main pushed, exactly like the Settings panel.
@@ -48,4 +49,5 @@ contextBridge.exposeInMainWorld("petChatAPI", {
   close: () => ipcRenderer.send("pet-chat:close"),
   setCollapsed: (value) => ipcRenderer.send("pet-chat:set-collapsed", !!value),
   reportHeight: (px) => ipcRenderer.send("pet-chat:height", px),
+  copyText: (text) => ipcRenderer.invoke("pet-chat:copy", text),
 });

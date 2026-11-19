@@ -19,6 +19,7 @@ const { createPetChatStore } = require("./pet-chat-store");
 const { normalizePetChat, readiness } = require("./pet-chat-config");
 
 const MAX_SUBMIT_CHARS = 4000;
+const MAX_COPY_CHARS = 200000;
 
 function requiredDependency(value, name) {
   if (!value) throw new Error(`registerPetChatIpc requires ${name}`);
@@ -213,7 +214,10 @@ function registerPetChatIpc(options = {}) {
       return { messages: [], streaming: false, error: null };
     }
     ensureRuntimes();
-    return { ...sessionRuntime.snapshot(), status: currentStatus() };
+    return {
+      ...sessionRuntime.snapshot(),
+      status: currentStatus(),
+    };
   });
 
   ipcMain.handle("pet-chat:submit", async (event, text) => {
@@ -254,6 +258,25 @@ function registerPetChatIpc(options = {}) {
   ipcMain.on("pet-chat:set-collapsed", (event, value) => {
     if (!isTrustedSender(event, () => windowRuntime && windowRuntime.getWindow())) return;
     if (windowRuntime) windowRuntime.setCollapsed(!!value);
+  });
+
+  // Copy goes through main so the sandboxed renderer needs no clipboard access.
+  // Bound to a size cap: a runaway model reply must not be able to push an
+  // unbounded string through IPC.
+  ipcMain.handle("pet-chat:copy", (event, text) => {
+    if (!isTrustedSender(event, () => windowRuntime && windowRuntime.getWindow())) {
+      return { status: "error", reason: "untrusted-sender" };
+    }
+    if (typeof text !== "string" || !text) {
+      return { status: "error", reason: "invalid-input" };
+    }
+    const capped = text.slice(0, MAX_COPY_CHARS);
+    try {
+      options.clipboard.writeText(capped);
+      return { status: "ok" };
+    } catch {
+      return { status: "error", reason: "copy-failed" };
+    }
   });
 
   ipcMain.on("pet-chat:height", (event, height) => {

@@ -217,6 +217,13 @@ body { padding: 6px; }
    A tinted sheet with a faint accent wash top-and-bottom so long transcripts do
    not read as one flat slab. */
 
+.chat-scroll {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+
 .chat-log {
   position: relative;
   flex: 1 1 auto;
@@ -302,6 +309,127 @@ body { padding: 6px; }
   font-variant-numeric: tabular-nums;
   opacity: 0.9;
 }
+
+/* ── Rich text (markdown) ──
+   Assistant turns carry sanitized HTML. Everything is scoped under .rich so a
+   plain-text bubble (user turns, or a model that emitted no markdown) keeps its
+   exact whitespace behaviour. */
+.bubble-text.rich { white-space: normal; }
+
+.bubble-text.rich > :first-child { margin-top: 0; }
+.bubble-text.rich > :last-child { margin-bottom: 0; }
+
+.bubble-text.rich p { margin: 0 0 0.55em; }
+
+.bubble-text.rich strong { font-weight: 650; }
+.bubble-text.rich em { font-style: italic; }
+.bubble-text.rich del { opacity: 0.65; }
+
+.bubble-text.rich h1,
+.bubble-text.rich h2,
+.bubble-text.rich h3,
+.bubble-text.rich h4,
+.bubble-text.rich h5,
+.bubble-text.rich h6 {
+  margin: 0.7em 0 0.35em;
+  font-size: 1em;
+  font-weight: 680;
+  line-height: 1.35;
+}
+.bubble-text.rich h1 { font-size: 1.12em; }
+.bubble-text.rich h2 { font-size: 1.06em; }
+
+.bubble-text.rich ul,
+.bubble-text.rich ol {
+  margin: 0.35em 0 0.6em;
+  padding-left: 1.35em;
+}
+.bubble-text.rich li { margin: 0.12em 0; }
+.bubble-text.rich li > p { margin: 0; }
+
+.bubble-text.rich blockquote {
+  margin: 0.45em 0;
+  padding: 0.1em 0 0.1em 0.7em;
+  border-left: 2.5px solid currentColor;
+  opacity: 0.72;
+}
+
+.bubble-text.rich hr {
+  margin: 0.7em 0;
+  border: none;
+  border-top: 1px solid currentColor;
+  opacity: 0.2;
+}
+
+/* Inline code */
+.bubble-text.rich code {
+  padding: 0.12em 0.34em;
+  border-radius: 4px;
+  background: var(--code-inline-bg);
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.88em;
+}
+
+/* Fenced blocks: scroll horizontally rather than widening the bubble. */
+.bubble-text.rich pre {
+  margin: 0.5em 0;
+  padding: 8px 10px;
+  border-radius: 9px;
+  background: var(--code-block-bg);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+}
+.bubble-text.rich pre code {
+  padding: 0;
+  background: none;
+  font-size: 0.85em;
+  line-height: 1.5;
+  white-space: pre;
+}
+.bubble-text.rich pre::-webkit-scrollbar { height: 7px; }
+.bubble-text.rich pre::-webkit-scrollbar-thumb {
+  background: var(--thumb);
+  border-radius: 4px;
+}
+
+.bubble-text.rich a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+}
+.bubble-text.rich a:hover { opacity: 0.82; }
+
+.bubble-text.rich table {
+  margin: 0.5em 0;
+  border-collapse: collapse;
+  font-size: 0.92em;
+  display: block;
+  overflow-x: auto;
+}
+.bubble-text.rich th,
+.bubble-text.rich td {
+  padding: 3px 8px;
+  border: 1px solid var(--bubble-in-border);
+  text-align: left;
+}
+.bubble-text.rich th { font-weight: 650; }
+
+/* Code surfaces are tinted per scheme: on the outgoing accent bubble the text
+   is white, so the only legible option is a translucent light wash. */
+:root {
+  --code-inline-bg: rgba(0, 0, 0, 0.06);
+  --code-block-bg: rgba(0, 0, 0, 0.045);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --code-inline-bg: rgba(255, 255, 255, 0.1);
+    --code-block-bg: rgba(0, 0, 0, 0.28);
+  }
+}
+.row.user .bubble-text.rich code { background: rgba(255, 255, 255, 0.18); }
+.row.user .bubble-text.rich pre { background: rgba(0, 0, 0, 0.16); }
 
 /* Chain-of-thought / reasoning draft: visually subordinate, and sized to span
    the whole bubble rather than compete with the timestamp column. */
@@ -433,6 +561,119 @@ body { padding: 6px; }
   user-select: text;
   animation: bubble-in 160ms ease both;
 }
+
+/* ── Jump-to-latest ──
+   Only appears while the user has scrolled away from the bottom during a
+   streamed reply, so new content never silently piles up off-screen. */
+
+.jump-latest {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%) translateY(6px);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 11px 6px 9px;
+  border: 1px solid var(--bubble-in-border);
+  border-radius: 999px;
+  background: var(--bubble-in);
+  color: var(--text);
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(16, 24, 40, 0.16);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.jump-latest svg { width: 13px; height: 13px; display: block; }
+
+.jump-latest[data-visible="true"] {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
+}
+
+.jump-latest:hover { background: var(--log-tint-solid, var(--bubble-in)); }
+.jump-latest:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+
+/* Count badge, shown when more than one message arrived while scrolled up. */
+.jump-count {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Per-message copy ──
+   Revealed on bubble hover; positioned just outside the bubble so it never
+   covers text. Touch and keyboard reach it through focus-within. */
+
+.bubble-copy {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 6px;
+  background: var(--copy-bg);
+  color: var(--copy-color);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 130ms ease, background 130ms ease;
+}
+
+.bubble-copy svg { width: 12px; height: 12px; display: block; }
+
+.row.pet .bubble:hover .bubble-copy,
+.row.user .bubble:hover .bubble-copy,
+.bubble:focus-within .bubble-copy {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.bubble-copy:hover { background: var(--copy-bg-hover); }
+.bubble-copy:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+
+.bubble-copy[data-copied="true"] { opacity: 1; pointer-events: auto; }
+
+:root {
+  --copy-bg: rgba(255, 255, 255, 0.82);
+  --copy-bg-hover: #ffffff;
+  --copy-color: #4b5563;
+  --log-tint-solid: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --copy-bg: rgba(16, 22, 33, 0.78);
+    --copy-bg-hover: #1b2836;
+    --copy-color: #b8c4d0;
+    --log-tint-solid: #1a2632;
+  }
+}
+.row.user .bubble-copy {
+  --copy-bg: rgba(0, 0, 0, 0.26);
+  --copy-bg-hover: rgba(0, 0, 0, 0.4);
+  --copy-color: rgba(255, 255, 255, 0.92);
+}
+
+/* Room for the copy button so it never overlaps the first line of text. */
+.row.pet .bubble { padding-right: 26px; }
 
 /* ── Composer ── */
 

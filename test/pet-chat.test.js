@@ -557,3 +557,82 @@ describe("pet chat status survives transcript-only snapshots", () => {
     assert.match(source, /status: currentStatus\(\)/);
   });
 });
+
+// ── Markdown rendering ──
+describe("pet chat markdown", () => {
+  const { renderSafeMarkdown, sanitizeHref } = require("../src/pet-chat-markdown");
+
+  it("renders common chat markdown", () => {
+    const html = renderSafeMarkdown("**b** and `c`\n\n```js\nx\n```\n\n1. a\n2. b");
+    assert.match(html, /<strong>b<\/strong>/);
+    assert.match(html, /<code>c<\/code>/);
+    assert.match(html, /<pre><code/);
+    assert.match(html, /<ol>/);
+  });
+
+  it("never lets raw HTML through", () => {
+    const html = renderSafeMarkdown("<script>alert(1)</script>");
+    assert.ok(!/<script/i.test(html), "script must not survive");
+    assert.match(html, /&lt;script&gt;/);
+  });
+
+  it("never emits a live event handler or unknown tag", () => {
+    const html = renderSafeMarkdown('<img src=x onerror="alert(1)">');
+    // The input is escaped to visible text, so the danger is whether it becomes
+    // an actual tag/attribute — not whether the characters appear at all.
+    assert.ok(!/<img[\s>]/i.test(html), "img must not become a real element");
+    assert.ok(!/<[^>]+\son\w+\s*=/i.test(html), "no element may carry an on* attribute");
+    assert.match(html, /&lt;img/);
+  });
+
+  it("rejects non-http link schemes", () => {
+    const html = renderSafeMarkdown("[x](javascript:alert(1))");
+    assert.ok(!/javascript:/i.test(html), "javascript: must not reach an href");
+    assert.match(html, /<span>x<\/span>/);
+  });
+
+  it("keeps http(s) links with a rel guard", () => {
+    const html = renderSafeMarkdown("[ok](https://example.com/a)");
+    assert.match(html, /href="https:\/\/example\.com\/a"/);
+    assert.match(html, /rel="noreferrer noopener"/);
+  });
+
+  it("sanitizeHref only accepts http(s) without credentials", () => {
+    assert.ok(sanitizeHref("https://a.com/x"));
+    assert.ok(sanitizeHref("http://a.com/x"));
+    assert.strictEqual(sanitizeHref("javascript:alert(1)"), null);
+    assert.strictEqual(sanitizeHref("data:text/html,x"), null);
+    assert.strictEqual(sanitizeHref("https://u:p@a.com"), null);
+    assert.strictEqual(sanitizeHref(""), null);
+  });
+
+  it("returns empty for empty input", () => {
+    assert.strictEqual(renderSafeMarkdown("   "), "");
+    assert.strictEqual(renderSafeMarkdown(null), "");
+  });
+});
+
+// ── Incremental-render invariants for the new affordances ──
+describe("pet chat affordances", () => {
+  const source = fs.readFileSync(path.join(__dirname, "..", "src", "pet-chat-renderer.js"), "utf8");
+
+  it("jump button shows whenever the reader is scrolled up", () => {
+    // Previously gated on unseenCount, so a plain scroll-up showed nothing.
+    assert.match(source, /const show = scrolled;/);
+    assert.ok(!/const show = !atBottom\(logEl\) && \(unseenCount > 0 \|\| force\)/.test(source));
+  });
+
+  it("copy uses the raw text, not the rendered markup", () => {
+    assert.match(source, /body\.dataset\.raw/);
+    assert.match(source, /copyText\(raw\)/);
+  });
+
+  it("keeps markup rendering incremental (no reparse when unchanged)", () => {
+    assert.match(source, /if \(renderedHtml\.get\(body\) === html\) return;/);
+  });
+
+  it("only assistant turns receive html", () => {
+    const runtime = fs.readFileSync(path.join(__dirname, "..", "src", "pet-chat-runtime.js"), "utf8");
+    assert.match(runtime, /role === "assistant"/);
+  });
+});

@@ -43,6 +43,9 @@ const GLOBALS = new Set([
   "structuredClone", "queueMicrotask", "performance", "atob", "btoa",
   "encodeURIComponent", "decodeURIComponent", "parseInt", "parseFloat", "isNaN",
   "isFinite", "undefined", "NaN", "Infinity",
+  // Browser globals, present in the renderer preload/window documents.
+  "requestAnimationFrame", "cancelAnimationFrame", "DOMParser", "Node", "Element",
+  "document", "window", "navigator", "location", "CustomEvent", "Event", "getComputedStyle",
 ]);
 
 // Blank out comments and string/template bodies while preserving offsets, so
@@ -64,6 +67,26 @@ function stripNoise(text) {
         i += 1;
       }
       out[i] = " "; out[i + 1] = " "; i += 2;
+      continue;
+    }
+    // Regular-expression literals: a `/` right after an operator or opening
+    // bracket starts a regex, and any quotes inside it must not be read as
+    // string delimiters. Without this, `/href\s*=\s*"([^"]*)"/` swallowed the
+    // rest of the file.
+    if (c === "/" && (i === 0 || /[=(,:;[!&|?{}+\-*%<>~^]$/.test(text.slice(0, i).replace(/\s+$/, "").slice(-1)))) {
+      out[i] = " "; i += 1;
+      let inClass = false;
+      while (i < n) {
+        const rc = text[i];
+        if (rc === "\\") { out[i] = " "; i += 1; if (i < n) { out[i] = " "; i += 1; } continue; }
+        if (rc === "[") inClass = true;
+        else if (rc === "]") inClass = false;
+        else if (rc === "/" && !inClass) { out[i] = " "; i += 1; break; }
+        else if (rc === "\n") break;
+        out[i] = " "; i += 1;
+      }
+      // Consume trailing flags.
+      while (i < n && /[a-z]/i.test(text[i])) { out[i] = " "; i += 1; }
       continue;
     }
     if (c === '"' || c === "'" || c === "`") {

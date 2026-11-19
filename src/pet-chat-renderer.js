@@ -13,6 +13,7 @@
 
 const chatEl = document.getElementById("chat");
 const logEl = document.getElementById("chatLog");
+const jumpBtn = document.getElementById("btnJumpLatest");
 const errorEl = document.getElementById("chatError");
 const inputEl = document.getElementById("chatInput");
 const sendBtn = document.getElementById("btnSend");
@@ -37,6 +38,10 @@ const STRINGS = {
     statusThinking: "typing…",
     statusOffline: "not connected",
     statusChecking: "connecting…",
+    jumpLatest: "Latest",
+    jumpNew: "New",
+    copy: "Copy",
+    copied: "Copied",
   },
   zh: {
     title: "聊天",
@@ -52,6 +57,10 @@ const STRINGS = {
     statusThinking: "正在输入…",
     statusOffline: "未连接",
     statusChecking: "连接中…",
+    jumpLatest: "最新",
+    jumpNew: "新消息",
+    copy: "复制",
+    copied: "已复制",
   },
 };
 
@@ -59,6 +68,9 @@ let lang = "en";
 let lastSnapshot = null;
 let lastReportedHeight = 0;
 let stickToBottom = true;
+// Counts messages that arrived while the user was scrolled up. Reset on jump.
+let unseenCount = 0;
+let lastSeenMessageCount = 0;
 
 function t(key) {
   const dict = STRINGS[lang] || STRINGS.en;
@@ -261,6 +273,133 @@ function renderStatus(status, streaming) {
   subEl.dataset.tone = tone;
 }
 
+// ── Per-message copy ──
+//
+// Each bubble gets a button that copies the ORIGINAL text, not the rendered
+// markup: `body.dataset.raw` holds what the model (or the user) actually said,
+// so pasting never yields HTML entities or stripped formatting.
+
+function buildCopyIcon() {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "1.9");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  const r = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+  r.setAttribute("x", "9"); r.setAttribute("y", "9");
+  r.setAttribute("width", "11"); r.setAttribute("height", "11");
+  r.setAttribute("rx", "2");
+  const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  p.setAttribute("d", "M5 15V5a2 2 0 0 1 2-2h10");
+  svg.appendChild(r);
+  svg.appendChild(p);
+  return svg;
+}
+
+function attachCopyButton(bubble) {
+  if (bubble.querySelector(".bubble-copy")) return;
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "bubble-copy";
+  btn.title = t("copy");
+  btn.setAttribute("aria-label", t("copy"));
+  btn.appendChild(buildCopyIcon());
+  btn.addEventListener("click", async (event) => {
+    event.stopPropagation();
+    const body = bubble.querySelector(".bubble-text");
+    const raw = body && body.dataset.raw ? body.dataset.raw : "";
+    if (!raw) return;
+    try {
+      const result = await window.petChatAPI.copyText(raw);
+      if (!result || result.status !== "ok") throw new Error("copy failed");
+      // Brief confirmation in place of the icon; the button stays visible.
+      btn.dataset.copied = "true";
+      btn.title = t("copied");
+      btn.textContent = "";
+      const check = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      check.setAttribute("viewBox", "0 0 24 24");
+      check.setAttribute("fill", "none");
+      check.setAttribute("stroke", "currentColor");
+      check.setAttribute("stroke-width", "2.4");
+      check.setAttribute("stroke-linecap", "round");
+      check.setAttribute("stroke-linejoin", "round");
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      path.setAttribute("d", "M20 6 9 17l-5-5");
+      check.appendChild(path);
+      btn.appendChild(check);
+      clearTimeout(btn.__resetTimer);
+      btn.__resetTimer = setTimeout(() => {
+        btn.dataset.copied = "false";
+        btn.title = t("copy");
+        btn.textContent = "";
+        btn.appendChild(buildCopyIcon());
+      }, 1400);
+    } catch {
+      // Copy failing is not worth an error banner; leave the button as-is.
+    }
+  });
+  bubble.appendChild(btn);
+}
+
+// ── Jump-to-latest ──
+//
+// While the user reads history, streamed content keeps growing below. Rather
+// than yanking the scroll position (which would fight the reader), surface a
+// button that says how much arrived.
+
+// `messageCount` is only supplied from render(); scroll events call this with
+// the default so they can show/hide the affordance without fabricating a count.
+function updateJumpButton({ messageCount = null } = {}) {
+  if (!jumpBtn) return;
+  const scrolled = !atBottom(logEl);
+
+  if (!scrolled) {
+    unseenCount = 0;
+    if (messageCount != null) lastSeenMessageCount = messageCount;
+  } else if (messageCount != null && messageCount > lastSeenMessageCount) {
+    unseenCount = Math.max(unseenCount, messageCount - lastSeenMessageCount);
+  }
+
+  // The button belongs on screen whenever the user is reading history — not
+  // only when something new arrived. Someone who simply scrolled up still needs
+  // an obvious way back to the newest message.
+  const show = scrolled;
+  jumpBtn.dataset.visible = show ? "true" : "false";
+  jumpBtn.hidden = !show;
+  if (!show) {
+    const badge = jumpBtn.querySelector(".jump-count");
+    if (badge) badge.remove();
+    return;
+  }
+
+  const label = jumpBtn.querySelector(".jump-label");
+  if (label) label.textContent = unseenCount > 1 ? t("jumpNew") : t("jumpLatest");
+
+  let badge = jumpBtn.querySelector(".jump-count");
+  if (unseenCount > 1) {
+    if (!badge) {
+      badge = document.createElement("span");
+      badge.className = "jump-count";
+      jumpBtn.appendChild(badge);
+    }
+    if (badge.textContent !== String(unseenCount)) badge.textContent = String(unseenCount);
+  } else if (badge) {
+    badge.remove();
+  }
+}
+
+function jumpToLatest() {
+  stickToBottom = true;
+  unseenCount = 0;
+  logEl.scrollTo({ top: logEl.scrollHeight, behavior: "smooth" });
+  // Fall back to an instant scroll when the environment ignores smooth.
+  setTimeout(() => {
+    if (!atBottom(logEl)) logEl.scrollTop = logEl.scrollHeight;
+  }, 260);
+}
+
 // ── Incremental transcript ──
 //
 // The window receives a fresh full snapshot for every streamed chunk. Rebuilding
@@ -297,8 +436,52 @@ function ensureBubbleBody(bubble) {
   return body;
 }
 
+// Tracks which markup string is currently in each bubble body, so an unchanged
+// render can skip the parse+DOM swap entirely (this runs per streamed chunk).
+const renderedHtml = new WeakMap();
+
+// Applies pre-sanitized HTML from main.
+//
+// The markup is already restricted to an allowlist by pet-chat-markdown.js, but
+// it is still parsed with DOMParser and imported node-by-node rather than
+// assigned to innerHTML: the renderer then never interprets a string as markup,
+// which is the invariant rest of the UI already follows. Parsing as XHTML makes
+// the document strict — a malformed fragment fails to parse rather than being
+// silently repaired into unexpected structure.
+function applyRichText(body, html, rawText) {
+  body.dataset.raw = rawText;
+  if (renderedHtml.get(body) === html) return;
+  renderedHtml.set(body, html);
+  body.classList.add("rich");
+  body.textContent = "";
+
+  let doc = null;
+  try {
+    doc = new DOMParser().parseFromString(`<body>${html}</body>`, "text/html");
+  } catch {
+    doc = null;
+  }
+  if (!doc || !doc.body) {
+    // Unparseable: show the source text rather than an empty bubble.
+    body.classList.remove("rich");
+    body.textContent = rawText;
+    renderedHtml.delete(body);
+    return;
+  }
+  for (const child of [...doc.body.childNodes]) {
+    body.appendChild(document.importNode(child, true));
+  }
+}
+
+function applyPlainText(body, text) {
+  body.dataset.raw = text;
+  renderedHtml.delete(body);
+  body.classList.remove("rich");
+  if (body.textContent !== text) body.textContent = text;
+}
+
 // Updates a bubble in place. Returns nothing; the caller owns positioning.
-function paintBubble(bubble, text, { reasoning = "", at = null, interrupted = false } = {}) {
+function paintBubble(bubble, text, { reasoning = "", at = null, interrupted = false, html = "" } = {}) {
   let think = bubble.querySelector(".bubble-think");
   if (reasoning) {
     if (!think) {
@@ -316,7 +499,8 @@ function paintBubble(bubble, text, { reasoning = "", at = null, interrupted = fa
   }
 
   const body = ensureBubbleBody(bubble);
-  if (body.textContent !== text) body.textContent = text;
+  if (html) applyRichText(body, html, text);
+  else applyPlainText(body, text);
 
   let time = bubble.querySelector(".bubble-time");
   if (at != null) {
@@ -417,12 +601,18 @@ function render(snapshot) {
       const bubble = document.createElement("div");
       bubble.className = "bubble";
       row.appendChild(bubble);
+      attachCopyButton(bubble);
       // A brand-new row may replace an existing node at this index.
       if (rows[i] && rows[i].parentNode === logEl) logEl.replaceChild(row, rows[i]);
       else logEl.insertBefore(row, logEl.children[i] || null);
       rows[i] = row;
     }
-    paintBubble(row.firstChild, entry.content, { at: entry.at, interrupted });
+    paintBubble(row.firstChild, entry.content, {
+      at: entry.at,
+      interrupted,
+      // Only assistant turns carry pre-sanitized markdown.
+      html: typeof entry.html === "string" ? entry.html : "",
+    });
   }
 
   // Trim rows beyond the current transcript.
@@ -450,13 +640,18 @@ function render(snapshot) {
       const bubble = document.createElement("div");
       bubble.className = "bubble";
       streamingRow.appendChild(bubble);
+      // The in-flight bubble gets its button only once it settles; copying a
+      // half-finished reply is not useful.
       logEl.appendChild(streamingRow);
     }
     streamingRow.classList.toggle("group-start", lastRole !== "pet");
 
     const bubble = streamingRow.firstChild;
     if (streamed) {
-      paintBubble(bubble, streamed, { reasoning });
+      paintBubble(bubble, streamed, {
+        reasoning,
+        html: typeof snapshot.streaming_html === "string" ? snapshot.streaming_html : "",
+      });
       bubble.querySelectorAll(".typing").forEach((el) => el.remove());
     } else {
       // Typing placeholder: reuse if present so the dots keep their phase.
@@ -511,6 +706,8 @@ function finishRender(snapshot, messages, shouldStick) {
 
   if (shouldStick) scrollToBottom();
   stickToBottom = atBottom(logEl);
+  // Run after the DOM has been laid out so atBottom() sees fresh geometry.
+  requestAnimationFrame(() => updateJumpButton({ messageCount: messages.length }));
   scheduleHeightReport();
 }
 
@@ -588,7 +785,10 @@ closeBtn.addEventListener("click", () => window.petChatAPI.close());
 // scrolling up to read history must not be yanked back by incoming deltas.
 logEl.addEventListener("scroll", () => {
   stickToBottom = atBottom(logEl);
+  updateJumpButton();
 });
+
+if (jumpBtn) jumpBtn.addEventListener("click", jumpToLatest);
 
 window.addEventListener("resize", scheduleHeightReport);
 

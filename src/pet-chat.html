@@ -34,7 +34,15 @@
     </div>
   </header>
 
-  <div class="chat-log" id="chatLog" role="log" aria-live="polite"></div>
+  <div class="chat-scroll">
+    <div class="chat-log" id="chatLog" role="log" aria-live="polite"></div>
+    <button class="jump-latest" id="btnJumpLatest" type="button" hidden>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 5v14M5 12l7 7 7-7"/>
+      </svg>
+      <span class="jump-label">New</span>
+    </button>
+  </div>
 
   <div class="chat-error" id="chatError" hidden></div>
 

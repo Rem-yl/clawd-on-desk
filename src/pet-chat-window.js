@@ -41,6 +41,8 @@ const MAX_HEIGHT = 720;
 const EDGE_MARGIN = 8;
 const GAP = 8;
 const MAX_WORK_AREA_WIDTH_RATIO = 0.9;
+const MIN_WIDTH = 300;
+const ABSOLUTE_MAX_HEIGHT = 1400;
 const MAC_FLOATING_TOPMOST_DELAY_MS = 120;
 
 function requiredDependency(value, name) {
@@ -139,24 +141,45 @@ function createPetChatWindowRuntime(options = {}) {
       && Number.isFinite(rect.y) && Number.isFinite(rect.width) && Number.isFinite(rect.height));
   }
 
-  function computeBounds() {
-    const petBounds = getPetWindowBounds();
-    if (!petBounds) return null;
-    const workArea = resolveWorkArea(petBounds);
-    const scale = resolveScale(workArea);
-    const rawHeight = collapsed ? MIN_HEIGHT : measuredHeight;
-    const height = scaleHeight(Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, rawHeight)), scale);
+  // The panel always opens ABOVE the pet. computeUpdateBubbleBounds() tries
+  // "below" first, so instead of using its candidate order this places the
+  // window directly and only falls back to the helper when there is genuinely
+  // no room above (short work area, pet at the very top).
+  function boundsAbovePet(petBounds, workArea, scale) {
+    const height = scaleHeight(
+      Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, collapsed ? MIN_HEIGHT : measuredHeight)),
+      scale
+    );
     const width = Math.min(
       scaleWidth(WIDTH, scale),
-      Math.max(scaleWidth(240, scale), Math.floor(workArea.width * MAX_WORK_AREA_WIDTH_RATIO))
+      Math.max(scaleWidth(MIN_WIDTH, scale), Math.floor(workArea.width * MAX_WORK_AREA_WIDTH_RATIO))
     );
-    const anchorRect = getAnchorRect(petBounds);
+    const anchorRect = getAnchorRect(petBounds) || toEdgeRect(petBounds);
+    const edgeMargin = Math.round(EDGE_MARGIN * scale);
+    const gap = Math.round(GAP * scale);
+
+    const aboveY = Math.round(anchorRect.top) - gap - height;
+    const minY = workArea.y + edgeMargin;
+    if (aboveY >= minY) {
+      return clampHorizontally(
+        {
+          x: Math.round((anchorRect.left + anchorRect.right) / 2 - width / 2),
+          y: aboveY,
+          width,
+          height,
+        },
+        workArea,
+        edgeMargin
+      );
+    }
+    // Not enough headroom: let the shared helper pick a side/below placement so
+    // the panel never lands off-screen.
     return computeUpdateBubbleBounds({
       bubbleFollowPet: true,
       followPreference: "auto",
       width,
-      edgeMargin: Math.round(EDGE_MARGIN * scale),
-      gap: Math.round(GAP * scale),
+      edgeMargin,
+      gap,
       height,
       reservedHeight: 0,
       workArea,
@@ -165,6 +188,23 @@ function createPetChatWindowRuntime(options = {}) {
       hitRect: toEdgeRect(petBounds),
       avoidRects: getAvoidRects(),
     });
+  }
+
+  function clampHorizontally(rect, workArea, edgeMargin) {
+    const minX = workArea.x + edgeMargin;
+    const maxX = workArea.x + workArea.width - edgeMargin - rect.width;
+    return {
+      ...rect,
+      x: Math.round(Math.min(Math.max(rect.x, minX), Math.max(minX, maxX))),
+    };
+  }
+
+  function computeBounds() {
+    const petBounds = getPetWindowBounds();
+    if (!petBounds) return null;
+    const workArea = resolveWorkArea(petBounds);
+    const scale = resolveScale(workArea);
+    return boundsAbovePet(petBounds, workArea, scale);
   }
 
   function ensureWindow() {
@@ -178,6 +218,8 @@ function createPetChatWindowRuntime(options = {}) {
       show: false,
       frame: false,
       transparent: true,
+      // Fixed placement: the panel is positioned entirely by the runtime so it
+      // always tracks the pet. Not user-movable or resizable.
       resizable: false,
       movable: false,
       minimizable: false,

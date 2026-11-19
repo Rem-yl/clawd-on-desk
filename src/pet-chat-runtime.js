@@ -15,6 +15,7 @@ const {
   buildMessages,
   createPetChatClient,
 } = require("./pet-chat-client");
+const { renderSafeMarkdown } = require("./pet-chat-markdown");
 const { readiness } = require("./pet-chat-config");
 const { createPetChatStore } = require("./pet-chat-store");
 
@@ -50,7 +51,14 @@ function createPetChatSessionRuntime(options = {}) {
 
   function snapshot() {
     return {
-      messages: messages.map(({ role, content, at }) => ({ role, content, at })),
+      // Assistant turns carry `html` (sanitized in the main process) alongside
+      // the raw `content`. User turns are never markdown: echoing the user's own
+      // text back as markup would be surprising and is not what they typed.
+      messages: messages.map(({ role, content, at }) => (
+        role === "assistant"
+          ? { role, content, at, html: renderSafeMarkdown(content) }
+          : { role, content, at }
+      )),
       streaming,
       error: lastError,
       collapsed: false,
@@ -131,6 +139,7 @@ function createPetChatSessionRuntime(options = {}) {
         ...snapshot(),
         streaming: true,
         streaming_text: streamed,
+        streaming_html: renderSafeMarkdown(streamed),
         streaming_reasoning: streamedReasoning,
       });
     };
